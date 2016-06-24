@@ -1,0 +1,94 @@
+#include <iostream>
+#include <pcl/point_types.h>
+#include <pcl/features/normal_3d.h>
+#include <pcl/visualization/cloud_viewer.h>
+
+using namespace std;
+
+int main()
+{
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZ>);
+
+    //... read, pass in or create a point cloud ...
+    cloud->width = 100;
+    cloud->height = 1;
+    cloud->is_dense = false;
+    cloud->points.resize (cloud->width * cloud->height);
+    // Generate the data
+    for (size_t i = 0; i < cloud->points.size (); i++)
+    {
+        cloud->points[i].x = 1024 * rand () / (RAND_MAX + 1.0f);
+        cloud->points[i].y = 1024 * rand () / (RAND_MAX + 1.0f);
+        cloud->points[i].z = 1.0;
+    }
+    
+    //surface
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_surface (new pcl::PointCloud<pcl::PointXYZ>);
+    cloud_surface->width = 200;
+    cloud_surface->height = 1;
+    cloud_surface->is_dense = false;
+    cloud_surface->points.resize (cloud_surface->width * cloud_surface->height);
+    // Generate the data
+    for (size_t i = 0; i < cloud_surface->points.size (); i++)
+    {
+        cloud_surface->points[i].x = 1024 * rand () / (RAND_MAX + 1.0f);
+        cloud_surface->points[i].y = 1024 * rand () / (RAND_MAX + 1.0f);
+        cloud_surface->points[i].z = 1024 * rand () / (RAND_MAX + 1.0f);
+    }
+
+    // Create the normal estimation class, and pass the input dataset to it
+    pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> ne;
+    ne.setInputCloud (cloud);
+
+    // Create a set of indices to be used. For simplicity, we're going to be using the first 10% of the points in cloud
+    std::vector<int> indices (floor (cloud->points.size () / 10));
+    for (size_t i = 0; i < indices.size (); i++) 
+        indices[i] = i;
+    // Pass the indices
+    boost::shared_ptr<std::vector<int> > indicesptr (new std::vector<int> (indices));
+    //ne.setIndices (indicesptr);
+    
+    // Pass the original data (before downsampling) as the search surface
+    //ne.setSearchSurface (cloud_surface);
+    
+    // Create an empty kdtree representation, and pass it to the normal estimation object.
+    // Its content will be filled inside the object, based on the given input dataset (as no other search surface is given).
+    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ> ());
+    ne.setSearchMethod (tree);
+
+    // Output datasets
+    pcl::PointCloud<pcl::Normal>::Ptr cloud_normals (new pcl::PointCloud<pcl::Normal>);
+
+    // Use all neighbors in a sphere of radius 3cm
+    ne.setRadiusSearch (3.0);
+
+    // Compute the features
+    ne.compute (*cloud_normals);
+
+    // cloud_normals->points.size () should have the same size as the input cloud->points.size ()
+    for(size_t i=0; i<cloud_normals->points.size(); i++)
+    {
+        cout<<i<<"  normal = {"<<cloud_normals->points[i].normal[0]<<" ,"<<cloud_normals->points[i].normal[1]<<" ,"<<cloud_normals->points[i].normal[2]<<"}\n";
+    }    
+    
+    pcl::visualization::PCLVisualizer viewer("Cloud Viewer");
+    // Define R,G,B colors for the point cloud
+    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> source_cloud_color_handler (cloud, 200, 200, 200);
+    // We add the point cloud to the viewer and pass the color handler
+    viewer.addPointCloud (cloud, source_cloud_color_handler, "cloud");
+    viewer.addCoordinateSystem (1.0, 0);//viewer.addCoordinateSystem (1.0, "cloud", 0);
+    //viewer.setBackgroundColor(0.9, 0.9, 0.9, 0); // Setting background to a dark grey
+    viewer.setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 5, "cloud");
+    
+    //pcl::visualization::PCLVisualizer viewer("PCL Viewer");
+    viewer.setBackgroundColor (0.0, 0.0, 0.9);
+    viewer.addPointCloud (cloud, source_cloud_color_handler, "normal");
+    viewer.addPointCloudNormals<pcl::PointXYZ,pcl::Normal>(cloud, cloud_normals);
+    
+    while (!viewer.wasStopped ())
+    {
+        viewer.spinOnce ();
+    }
+    return 0;
+}
+

@@ -1,0 +1,112 @@
+#include <pcl/ModelCoefficients.h>
+#include <pcl/io/pcd_io.h>
+#include <pcl/point_types.h>
+#include <pcl/filters/extract_indices.h>
+#include <pcl/filters/passthrough.h>
+#include <pcl/features/normal_3d.h>
+#include <pcl/sample_consensus/method_types.h>
+#include <pcl/sample_consensus/model_types.h>
+#include <pcl/segmentation/sac_segmentation.h>
+#include <pcl/visualization/pcl_visualizer.h>
+typedef pcl::PointXYZ PointT;
+using namespace std;
+using namespace pcl;
+int main(int argc, char** argv)
+{
+
+    pcl::visualization::PCLVisualizer *p;
+    p = new pcl::visualization::PCLVisualizer (argc, argv, "source data");
+    int vp_1, vp_2;
+    p->createViewPort (0.0, 0, 0.5, 1.0, vp_1);
+    p->createViewPort (0.5, 0, 1.0, 1.0, vp_2);
+
+
+    //initialize
+    pcl::PCDReader reader;
+    pcl::PCDWriter writer;
+    
+    pcl::PassThrough<PointT> pass;  //filter, low-passing or high-passing
+    pcl::NormalEstimation<PointT, pcl::Normal> ne;  //normal eatimation
+    pcl::SACSegmentationFromNormals<PointT, pcl::Normal> seg;   //segment
+    pcl::ExtractIndices<PointT> extract;    //extract from indices
+    pcl::ExtractIndices<pcl::Normal> extract_normals;   //
+    pcl::search::KdTree<PointT>::Ptr tree(new pcl::search::KdTree<PointT>());
+    
+    pcl::PointCloud<PointT>::Ptr cloud(new pcl::PointCloud<PointT>);
+    pcl::PointCloud<PointT>::Ptr cloud_filtered(new pcl::PointCloud<PointT>);
+    pcl::PointCloud<pcl::Normal>::Ptr cloud_normals(new pcl::PointCloud<pcl::Normal>);
+    pcl::PointCloud<PointT>::Ptr cloud_filtered2(new pcl::PointCloud<PointT>);
+    pcl::PointCloud<pcl::Normal>::Ptr cloud_normals2(new pcl::PointCloud<pcl::Normal>);
+    pcl::ModelCoefficients::Ptr coefficients_plane(new pcl::ModelCoefficients), coefficients_cylinder(new pcl::ModelCoefficients);
+    pcl::PointIndices::Ptr inliers_plane(new pcl::PointIndices), inliers_cylinder(new pcl::PointIndices);
+    
+    reader.read("table_scene_mug_stereo_textured.pcd", *cloud);
+    cerr<<"PointCloud has: "<<cloud->points.size()<<" data points\n";
+    
+    pass.setInputCloud(cloud);
+    pass.setFilterFieldName("z");
+    pass.setFilterLimits(0, 1.5);
+    pass.filter(*cloud_filtered);
+    cerr<<"PointCloud after filtering has: "<<cloud_filtered->points.size()<<"\n";
+    
+    ne.setSearchMethod(tree);
+    ne.setInputCloud(cloud_filtered);
+    ne.setKSearch(50);
+    ne.compute(*cloud_normals);
+    
+    seg.setOptimizeCoefficients(true);
+    seg.setModelType(pcl::SACMODEL_NORMAL_PLANE);
+    seg.setNormalDistanceWeight(0.1);
+    seg.setMethodType(pcl::SAC_RANSAC);
+    seg.setMaxIterations(100);
+    seg.setDistanceThreshold(0.03);
+    seg.setInputCloud(cloud_filtered);
+    seg.setInputNormals(cloud_normals);
+    seg.segment(*inliers_plane, *coefficients_plane);
+    cerr<<"plane coeffificents: "<<*coefficients_plane<<"\n";
+    
+    extract.setInputCloud(cloud_filtered);
+    extract.setIndices(inliers_plane);
+    extract.setNegative(true);
+    extract.filter(*cloud_filtered2);
+    extract_normals.setNegative(true);
+    extract_normals.setInputCloud(cloud_normals);
+    extract_normals.setIndices(inliers_plane);
+    extract_normals.filter(*cloud_normals2);
+    
+    seg.setOptimizeCoefficients(true);
+    seg.setModelType(pcl::SACMODEL_CYLINDER);
+    seg.setMethodType(pcl::SAC_RANSAC);
+    seg.setNormalDistanceWeight(0.1);
+    seg.setMaxIterations(10000);
+    seg.setRadiusLimits(0, 0.1);
+    seg.setInputCloud(cloud_filtered2);
+    seg.setInputNormals(cloud_normals2);
+    
+    seg.segment(*inliers_cylinder, *coefficients_cylinder);
+    cerr<<"cylinder coefficients: "<<*coefficients_cylinder<<"\n";
+    
+    extract.setInputCloud(cloud_filtered2);
+    extract.setIndices(inliers_cylinder);
+    extract.setNegative(false);
+    pcl::PointCloud<PointT>::Ptr cloud_cylinder(new pcl::PointCloud<PointT>() );
+    extract.filter(*cloud_cylinder);
+    
+    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> r (cloud, 200, 200, 200);
+    p->addPointCloud (cloud, r, "r", vp_2);
+    
+    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> h1 (cloud_filtered, 200, 10, 10);
+    p->addPointCloud (cloud_filtered, h1, "h1", vp_1);
+    
+    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> h2 (cloud_filtered, 10, 200, 10);
+    p->addPointCloud (cloud_filtered2, h2, "h2", vp_1);  
+    
+    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> h3 (cloud_filtered, 10, 10, 200);
+    p->addPointCloud (cloud_cylinder, h3, "h3", vp_1);  
+    
+    p->spin();
+       
+}
+
+
+
